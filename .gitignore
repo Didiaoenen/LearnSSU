@@ -1,1 +1,8 @@
 #
+
+Assets/UnityChanSSU
+Library/
+Logs/
+obj/
+ShaderIncludes/Packages/*
+*.csproj
