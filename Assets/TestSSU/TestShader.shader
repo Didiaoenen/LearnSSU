@@ -8,12 +8,28 @@
     {
         Pass
         {
+            Name "Outline"
+
             HLSLPROGRAM
 
-            #pragma vertex ToonVertex
-            #pragma fragment ToonFragment
+            #pragma vertex OutlineVertex
+            #pragma fragment OutlineFragment
 
-            #include "Toon.hlsl"
+            #include "Outline.hlsl"
+
+            ENDHLSL
+        }
+
+        Pass
+        {
+            Name "ForwardLit"
+
+            HLSLPROGRAM
+
+            #pragma vertex LitVertex
+            #pragma fragment LitFragment
+
+            #include "Lit.hlsl"
 
             ENDHLSL
         }
