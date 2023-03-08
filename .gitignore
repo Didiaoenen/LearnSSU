@@ -1,10 +1,11 @@
 #
 
-Assets/UnityChanSSU
+Assets/Models/UnityChanSSU
 Library/
 Logs/
 obj/
 ShaderIncludes/Packages/*
+Temp/
 *.csproj
-.vs
-.vscode
+.vs/
+.vscode/
