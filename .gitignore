@@ -6,3 +6,5 @@ Logs/
 obj/
 ShaderIncludes/Packages/*
 *.csproj
+.vs
+.vscode
