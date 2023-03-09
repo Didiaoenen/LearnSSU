@@ -33,9 +33,9 @@ VertexOutput LitVertex(VertexInput v)
 
     o.uv0 = v.texcoord0;
 
-//v.2.0.4
+    //v.2.0.4
 #if defined(_IS_ANGELRING_OFF)
-    //
+    //do nothing
 #elif defined(_IS_ANGELRING_ON)
     o.uv1 = v.texcoord1;
 #endif
@@ -76,7 +76,6 @@ VertexOutput LitVertex(VertexInput v)
 #   endif
     o.mainLightID = DetermineUTS_MainLightIndex(o.posWorld.xyz, o.shadowCoord, positionCS);
 #else
-    
     o.mainLightID = DetermineUTS_MainLightIndex(o.posWorld.xyz, 0, positionCS);
 #endif
 		
@@ -96,7 +95,8 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     float3 _NormalMap_var = UnpackNormalScale(SAMPLE_TEXTURE2D(_NormalMap, sampler_MainTex, TRANSFORM_TEX(Set_UV0, _NormalMap)), _BumpScale);
 
     float3 normalLocal = _NormalMap_var.xyz;
-    float3 normalDirection = normalize(mul(normalLocal, tangentTransform)); // Perturbed normals
+    // Perturbed normals
+    float3 normalDirection = normalize(mul(normalLocal, tangentTransform));
 
     // todo. not necessary to calc gi factor in  shadowcaster pass.
     SurfaceData surfaceData;
@@ -110,7 +110,7 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
     
 #if defined(LIGHTMAP_ON)
-    //
+    //do nothing
 #else
     input.vertexSH = i.vertexSH;
 #endif
@@ -138,7 +138,7 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
 
 #   if (VERSION_LOWER(7, 5))
         input.bitangentWS = half4(i.bitangentDir, viewDirection.z);    // xyz: bitangent, w: viewDir.z
-#   endif //
+#   endif
     
 #else
     
@@ -156,16 +156,16 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     InitializeBRDFData(surfaceData.albedo, surfaceData.metallic, surfaceData.specular, surfaceData.smoothness, surfaceData.alpha, brdfData);
 
     half3 envColor = GlobalIlluminationUTS(brdfData, inputData.bakedGI, surfaceData.occlusion, inputData.normalWS, inputData.viewDirectionWS);
-    envColor *= 1.8f;
+    envColor *= 1.8f; // 1.8?
 
     UtsLight mainLight = GetMainUtsLightByID(i.mainLightID, i.posWorld.xyz, inputData.shadowCoord, i.positionCS);
     half3 mainLightColor = GetLightColor(mainLight);
 
     float4 _MainTex_var = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, TRANSFORM_TEX(Set_UV0, _MainTex));
 
-//v.2.0.4
+    //v.2.0.4
 #ifdef _IS_TRANSCLIPPING_OFF
-    //
+    //double nothing
 #elif _IS_TRANSCLIPPING_ON
     float4 _ClippingMask_var = SAMPLE_TEXTURE2D(_ClippingMask, sampler_MainTex, TRANSFORM_TEX(Set_UV0, _ClippingMask));
     float Set_MainTexAlpha = _MainTex_var.a;
@@ -185,8 +185,15 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     float3 defaultLightDirection = normalize(UNITY_MATRIX_V[2].xyz + UNITY_MATRIX_V[1].xyz);
     
     //v.2.0.5
-    float3 defaultLightColor = saturate(max(half3(0.05, 0.05, 0.05) * _Unlit_Intensity, max(ShadeSH9(half4(0.0, 0.0, 0.0, 1.0)), ShadeSH9(half4(0.0, -1.0, 0.0, 1.0)).rgb) * _Unlit_Intensity));
-    float3 customLightDirection = normalize(mul(unity_ObjectToWorld, float4(((float3(1.0, 0.0, 0.0) * _Offset_X_Axis_BLD * 10) + (float3(0.0, 1.0, 0.0) * _Offset_Y_Axis_BLD * 10) + (float3(0.0, 0.0, -1.0) * lerp(-1.0, 1.0, _Inverse_Z_Axis_BLD))), 0)).xyz);
+    half3 maxX = ShadeSH9(half4(0.0, 0.0, 0.0, 1.0));
+    half3 maxY = ShadeSH9(half4(0.0, -1.0, 0.0, 1.0));
+    float3 defaultLightColor = saturate(max(half3(0.05, 0.05, 0.05) * _Unlit_Intensity, max(maxX, maxY) * _Unlit_Intensity));
+    
+    float3 x = float3(1.0, 0.0, 0.0) * _Offset_X_Axis_BLD * 10;
+    float3 y = float3(0.0, 1.0, 0.0) * _Offset_Y_Axis_BLD * 10;
+    float3 z = float3(0.0, 0.0, -1.0) * lerp(-1.0, 1.0, _Inverse_Z_Axis_BLD);
+    float3 customLightDirection = normalize(mul(unity_ObjectToWorld, float4(x + y + z, 0)).xyz);
+    
     float3 lightDirection = normalize(lerp(defaultLightDirection, mainLight.direction.xyz, any(mainLight.direction.xyz)));
     lightDirection = lerp(lightDirection, customLightDirection, _Is_BLD);
     //v.2.0.5: 
@@ -200,12 +207,12 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
 
 #if defined(_IS_PASS_FWDBASE)
     float3 Set_LightColor = lightColor.rgb;
-    float3 Set_BaseColor = lerp((_MainTex_var.rgb * _BaseColor.rgb), ((_MainTex_var.rgb * _BaseColor.rgb) * Set_LightColor), _Is_LightColor_Base);
+    float3 Set_BaseColor = lerp(_MainTex_var.rgb * _BaseColor.rgb, (_MainTex_var.rgb * _BaseColor.rgb) * Set_LightColor, _Is_LightColor_Base);
     
     //v.2.0.5
     float4 _1st_ShadeMap_var = lerp(SAMPLE_TEXTURE2D(_1st_ShadeMap, sampler_MainTex, TRANSFORM_TEX(Set_UV0, _1st_ShadeMap)), _MainTex_var, _Use_BaseAs1st);
-    float3 _Is_LightColor_1st_Shade_var = lerp((_1st_ShadeMap_var.rgb * _1st_ShadeColor.rgb), ((_1st_ShadeMap_var.rgb * _1st_ShadeColor.rgb) * Set_LightColor), _Is_LightColor_1st_Shade);
-    float _HalfLambert_var = 0.5 * dot(lerp(i.normalDir, normalDirection, _Is_NormalMapToBase), lightDirection) + 0.5; // Half Lambert
+    float3 _Is_LightColor_1st_Shade_var = lerp(_1st_ShadeMap_var.rgb * _1st_ShadeColor.rgb, (_1st_ShadeMap_var.rgb * _1st_ShadeColor.rgb) * Set_LightColor, _Is_LightColor_1st_Shade);
+    float _HalfLambert_var = 0.5 * saturate(dot(lerp(i.normalDir, normalDirection, _Is_NormalMapToBase), lightDirection)) + 0.5; // Half Lambert
 
     //v.2.0.6
     float4 _ShadingGradeMap_var = tex2Dlod(_ShadingGradeMap, float4(TRANSFORM_TEX(Set_UV0, _ShadingGradeMap), 0.0, _BlurLevelSGM));
@@ -222,7 +229,7 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
 
     float _ShadingGradeMapLevel_var = _ShadingGradeMap_var.r < 0.95 ? _ShadingGradeMap_var.r + _Tweak_ShadingGradeMapLevel : 1;
 
-    float Set_ShadingGrade = saturate(_ShadingGradeMapLevel_var) * lerp(_HalfLambert_var, (_HalfLambert_var * saturate(_SystemShadowsLevel_var)), _Set_SystemShadowsToBase);
+    float Set_ShadingGrade = saturate(_ShadingGradeMapLevel_var) * lerp(_HalfLambert_var, _HalfLambert_var * saturate(_SystemShadowsLevel_var), _Set_SystemShadowsToBase);
 
     //float Set_ShadingGrade = saturate(_ShadingGradeMapLevel_var)*lerp( _HalfLambert_var, (_HalfLambert_var*saturate(1.0+_Tweak_SystemShadowsLevel)), _Set_SystemShadowsToBase );
 

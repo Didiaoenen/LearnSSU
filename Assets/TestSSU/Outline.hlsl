@@ -4,6 +4,14 @@
 #include "Input.hlsl"
 #include "Head.hlsl"
 
+#ifndef _OUTLINE_NML
+#define _OUTLINE_NML
+#endif
+
+#ifndef _IS_OUTLINE_CLIPPING_NO
+#define _IS_OUTLINE_CLIPPING_NO
+#endif
+
 uniform float4 _LightColor0;
 
 struct VertexInput
@@ -63,7 +71,6 @@ VertexOutput OutlineVertex(VertexInput v)
 //#endif
     
     //v2.0.4
-#define _OUTLINE_NML
 #if defined(_OUTLINE_NML)
     //v.2.0.4.3 baked Normal Texture for Outline
     o.pos = UnityObjectToClipPos(lerp(float4(v.vertex.xyz + v.normal * Set_Outline_Width, 1), float4(v.vertex.xyz + _BakedNormalDir * Set_Outline_Width, 1), _Is_BakedNormal));
@@ -103,7 +110,6 @@ float4 OutlineFragment(VertexOutput i) : SV_Target
     float3 _OutlineTex_var = tex2D(_OutlineTex, TRANSFORM_TEX(Set_UV0, _OutlineTex)).rgb;
     
     //v.2.0.7.5
-#define _IS_OUTLINE_CLIPPING_NO
 #if defined(_IS_OUTLINE_CLIPPING_NO)
     
     float3 Set_Outline_Color = lerp(_Is_BlendBaseColor_var, _OutlineTex_var.rgb * _Outline_Color.rgb * lightColor, _Is_OutlineTex);

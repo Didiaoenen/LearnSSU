@@ -5,14 +5,6 @@
 #define SHADER_API_D3D11
 #endif
 
-#ifndef fixed
-#define fixed float
-#endif
-
-#ifndef fixed3
-#define fixed3 float3
-#endif
-
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
