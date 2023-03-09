@@ -6,8 +6,8 @@
 
 #include "Packages/com.unity.render-pipelines.universal/Shaders/LitForwardPass.hlsl"
 
-#ifndef _IS_ANGELRING_OFF
-#define _IS_ANGELRING_OFF
+#ifndef _IS_ANGELRING_ON
+#define _IS_ANGELRING_ON
 #endif
 
 #if (SHADER_LIBRARY_VERSION_MAJOR == 7 && SHADER_LIBRARY_VERSION_MINOR >= 3) || (SHADER_LIBRARY_VERSION_MAJOR >= 8)
