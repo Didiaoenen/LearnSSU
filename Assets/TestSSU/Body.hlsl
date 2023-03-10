@@ -23,6 +23,10 @@
 #define _IS_CLIPPING_OFF
 #endif
 
+#ifndef _IS_TRANSCLIPPING_OFF
+#define _IS_TRANSCLIPPING_OFF
+#endif
+
 VertexOutput LitVertex(VertexInput v)
 {
     VertexOutput o = (VertexOutput) 0;
@@ -102,7 +106,6 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     SurfaceData surfaceData;
     InitializeStandardLitSurfaceDataUTS(i.uv0, surfaceData);
 
-    InputData inputData;
     Varyings input = (Varyings) 0;
 
     // todo.  it has to be cared more.
@@ -150,6 +153,7 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     
 #endif
     
+    InputData inputData;
     InitializeInputData(input, surfaceData.normalTS, inputData);
 
     BRDFData brdfData;
@@ -182,19 +186,19 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
 #endif
 
     //v.2.0.4
-    float3 defaultLightDirection = normalize(UNITY_MATRIX_V[2].xyz + UNITY_MATRIX_V[1].xyz);
+    float3 defaultLightDirection = float3(0, 0, 0);// normalize(UNITY_MATRIX_V[2].xyz + UNITY_MATRIX_V[1].xyz);
     
     //v.2.0.5
-    half3 maxX = ShadeSH9(half4(0.0, 0.0, 0.0, 1.0));
-    half3 maxY = ShadeSH9(half4(0.0, -1.0, 0.0, 1.0));
-    float3 defaultLightColor = saturate(max(half3(0.05, 0.05, 0.05) * _Unlit_Intensity, max(maxX, maxY) * _Unlit_Intensity));
+    half3 max1 = ShadeSH9(half4(0.0, 0.0, 0.0, 1.0));
+    half3 max2 = ShadeSH9(half4(0.0, -1.0, 0.0, 1.0));
+    float3 defaultLightColor = saturate(max(half3(0.05, 0.05, 0.05) * _Unlit_Intensity, max(max1, max2) * _Unlit_Intensity));
     
     float3 x = float3(1.0, 0.0, 0.0) * _Offset_X_Axis_BLD * 10;
     float3 y = float3(0.0, 1.0, 0.0) * _Offset_Y_Axis_BLD * 10;
     float3 z = float3(0.0, 0.0, -1.0) * lerp(-1.0, 1.0, _Inverse_Z_Axis_BLD);
     float3 customLightDirection = normalize(mul(unity_ObjectToWorld, float4(x + y + z, 0)).xyz);
     
-    float3 lightDirection = normalize(lerp(defaultLightDirection, mainLight.direction.xyz, any(mainLight.direction.xyz)));
+    float3 lightDirection = normalize(lerp(defaultLightDirection, mainLight.direction, any(mainLight.direction)));
     lightDirection = lerp(lightDirection, customLightDirection, _Is_BLD);
     //v.2.0.5: 
     half3 originalLightColor = mainLightColor.rgb;
@@ -207,11 +211,14 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
 
 #if defined(_IS_PASS_FWDBASE)
     float3 Set_LightColor = lightColor.rgb;
-    float3 Set_BaseColor = lerp(_MainTex_var.rgb * _BaseColor.rgb, (_MainTex_var.rgb * _BaseColor.rgb) * Set_LightColor, _Is_LightColor_Base);
+    float3 texColor = _MainTex_var.rgb * _BaseColor.rgb;
+    float3 Set_BaseColor = lerp(texColor, texColor * Set_LightColor, _Is_LightColor_Base);
     
     //v.2.0.5
     float4 _1st_ShadeMap_var = lerp(SAMPLE_TEXTURE2D(_1st_ShadeMap, sampler_MainTex, TRANSFORM_TEX(Set_UV0, _1st_ShadeMap)), _MainTex_var, _Use_BaseAs1st);
-    float3 _Is_LightColor_1st_Shade_var = lerp(_1st_ShadeMap_var.rgb * _1st_ShadeColor.rgb, (_1st_ShadeMap_var.rgb * _1st_ShadeColor.rgb) * Set_LightColor, _Is_LightColor_1st_Shade);
+    
+    float3 _1ShadeMapColor = _1st_ShadeMap_var.rgb * _1st_ShadeColor.rgb;
+    float3 _Is_LightColor_1st_Shade_var = lerp(_1ShadeMapColor, _1ShadeMapColor * Set_LightColor, _Is_LightColor_1st_Shade);
     float _HalfLambert_var = 0.5 * saturate(dot(lerp(i.normalDir, normalDirection, _Is_NormalMapToBase), lightDirection)) + 0.5; // Half Lambert
 
     //v.2.0.6
@@ -225,7 +232,8 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
 
     //v.2.0.6
     //Minmimum value is same as the Minimum Feather's value with the Minimum Step's value as threshold.
-    float _SystemShadowsLevel_var = (shadowAttenuation * 0.5) + 0.5 + _Tweak_SystemShadowsLevel > 0.001 ? (shadowAttenuation * 0.5) + 0.5 + _Tweak_SystemShadowsLevel : 0.0001;
+    shadowAttenuation = (shadowAttenuation * 0.5) + 0.5 + _Tweak_SystemShadowsLevel;
+    float _SystemShadowsLevel_var = shadowAttenuation > 0.001 ? shadowAttenuation : 0.0001;
 
     float _ShadingGradeMapLevel_var = _ShadingGradeMap_var.r < 0.95 ? _ShadingGradeMap_var.r + _Tweak_ShadingGradeMapLevel : 1;
 
@@ -234,35 +242,50 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     //float Set_ShadingGrade = saturate(_ShadingGradeMapLevel_var)*lerp( _HalfLambert_var, (_HalfLambert_var*saturate(1.0+_Tweak_SystemShadowsLevel)), _Set_SystemShadowsToBase );
 
     //
-    float Set_FinalShadowMask = saturate((1.0 + ((Set_ShadingGrade - (_1st_ShadeColor_Step - _1st_ShadeColor_Feather)) * (0.0 - 1.0)) / (_1st_ShadeColor_Step - (_1st_ShadeColor_Step - _1st_ShadeColor_Feather)))); // Base and 1st Shade Mask
-    float3 _BaseColor_var = lerp(Set_BaseColor, _Is_LightColor_1st_Shade_var, Set_FinalShadowMask);
+    float _1Step = _1st_ShadeColor_Step - _1st_ShadeColor_Feather;
+    float Set_FinalShadowMask = saturate(1.0 + ((Set_ShadingGrade - _1Step) * (0.0 - 1.0)) / (_1st_ShadeColor_Step - _1Step)); // Base and 1st Shade Mask
     //v.2.0.5
-    float4 _2nd_ShadeMap_var = lerp(SAMPLE_TEXTURE2D(_2nd_ShadeMap, sampler_MainTex, TRANSFORM_TEX(Set_UV0, _2nd_ShadeMap)), _1st_ShadeMap_var, _Use_1stAs2nd);
-    float Set_ShadeShadowMask = saturate((1.0 + ((Set_ShadingGrade - (_2nd_ShadeColor_Step - _2nd_ShadeColor_Feather)) * (0.0 - 1.0)) / (_2nd_ShadeColor_Step - (_2nd_ShadeColor_Step - _2nd_ShadeColor_Feather)))); // 1st and 2nd Shades Mask
+    float _2Step = _2nd_ShadeColor_Step - _2nd_ShadeColor_Feather;
+    float Set_ShadeShadowMask = saturate(1.0 + ((Set_ShadingGrade - _2Step) * (0.0 - 1.0)) / (_2nd_ShadeColor_Step - _2Step)); // 1st and 2nd Shades Mask
     //Composition: 3 Basic Colors as Set_FinalBaseColor
-    float3 Set_FinalBaseColor = lerp(_BaseColor_var, lerp(_Is_LightColor_1st_Shade_var, lerp((_2nd_ShadeMap_var.rgb * _2nd_ShadeColor.rgb), ((_2nd_ShadeMap_var.rgb * _2nd_ShadeColor.rgb) * Set_LightColor), _Is_LightColor_2nd_Shade), Set_ShadeShadowMask), Set_FinalShadowMask);
+    float3 _BaseColor_var = lerp(Set_BaseColor, _Is_LightColor_1st_Shade_var, Set_FinalShadowMask);
+    float4 _2nd_ShadeMap_var = lerp(SAMPLE_TEXTURE2D(_2nd_ShadeMap, sampler_MainTex, TRANSFORM_TEX(Set_UV0, _2nd_ShadeMap)), _1st_ShadeMap_var, _Use_1stAs2nd);
+    
+    float3 _2ShadeMapColor = _2nd_ShadeMap_var.rgb * _2nd_ShadeColor.rgb;
+    float3 lightColor_2nd = lerp(_2ShadeMapColor, _2ShadeMapColor * Set_LightColor, _Is_LightColor_2nd_Shade);
+    float3 shadeShadowMask = lerp(_Is_LightColor_1st_Shade_var, lightColor_2nd, Set_ShadeShadowMask);
+    float3 Set_FinalBaseColor = lerp(_BaseColor_var, shadeShadowMask, Set_FinalShadowMask);
 
     float4 _Set_HighColorMask_var = tex2D(_Set_HighColorMask, TRANSFORM_TEX(Set_UV0, _Set_HighColorMask));
 
     float _Specular_var = 0.5 * dot(halfDirection, lerp(i.normalDir, normalDirection, _Is_NormalMapToHighColor)) + 0.5; // Specular
-    float _TweakHighColorMask_var = saturate(_Set_HighColorMask_var.g + _Tweak_HighColorMaskLevel) * lerp(1.0 - step(_Specular_var, 1.0 - pow(abs(_HighColor_Power), 5)), pow(abs(_Specular_var), exp2(lerp(11, 1, _HighColor_Power))), _Is_SpecularToHighColor);
+    float highColor = lerp(1.0 - step(_Specular_var, 1.0 - pow(abs(_HighColor_Power), 5)), pow(abs(_Specular_var), exp2(lerp(11, 1, _HighColor_Power))), _Is_SpecularToHighColor);
+    float _TweakHighColorMask_var = saturate(_Set_HighColorMask_var.g + _Tweak_HighColorMaskLevel) * highColor;
 
-    float4 _HighColor_Tex_var = tex2D(_HighColor_Tex, TRANSFORM_TEX(Set_UV0, _HighColor_Tex));
-
-    float3 _HighColor_var = lerp(_HighColor_Tex_var.rgb * _HighColor.rgb, (_HighColor_Tex_var.rgb * _HighColor.rgb) * Set_LightColor, _Is_LightColor_HighColor) * _TweakHighColorMask_var;
+    float3 texHighColor = tex2D(_HighColor_Tex, TRANSFORM_TEX(Set_UV0, _HighColor_Tex)).rgb * _HighColor.rgb;
+    float3 _HighColor_var = lerp(texHighColor, texHighColor * Set_LightColor, _Is_LightColor_HighColor) * _TweakHighColorMask_var;
     //Composition: 3 Basic Colors and HighColor as Set_HighColor
-    float3 Set_HighColor = lerp(SATURATE_IF_SDR(Set_FinalBaseColor - _TweakHighColorMask_var), Set_FinalBaseColor, lerp(_Is_BlendAddToHiColor, 1.0, _Is_SpecularToHighColor)) + lerp(_HighColor_var, _HighColor_var * ((1.0 - Set_FinalShadowMask) + (Set_FinalShadowMask * _TweakHighColorOnShadow)), _Is_UseTweakHighColorOnShadow);
+    float3 tweakHighColor = lerp(_HighColor_var, _HighColor_var * ((1.0 - Set_FinalShadowMask) + (Set_FinalShadowMask * _TweakHighColorOnShadow)), _Is_UseTweakHighColorOnShadow);
+    float3 Set_HighColor = lerp(SATURATE_IF_SDR(Set_FinalBaseColor - _TweakHighColorMask_var), Set_FinalBaseColor, lerp(_Is_BlendAddToHiColor, 1.0, _Is_SpecularToHighColor)) + tweakHighColor;
 
     float4 _Set_RimLightMask_var = tex2D(_Set_RimLightMask, TRANSFORM_TEX(Set_UV0, _Set_RimLightMask));
 
-    float3 _Is_LightColor_RimLight_var = lerp(_RimLightColor.rgb, (_RimLightColor.rgb * Set_LightColor), _Is_LightColor_RimLight);
+    float3 _Is_LightColor_RimLight_var = lerp(_RimLightColor.rgb, _RimLightColor.rgb * Set_LightColor, _Is_LightColor_RimLight);
     float _RimArea_var = abs(1.0 - dot(lerp(i.normalDir, normalDirection, _Is_NormalMapToRimLight), viewDirection));
     float _RimLightPower_var = pow(_RimArea_var, exp2(lerp(3, 0, _RimLight_Power)));
-    float _Rimlight_InsideMask_var = saturate(lerp((0.0 + ((_RimLightPower_var - _RimLight_InsideMask) * (1.0 - 0.0)) / (1.0 - _RimLight_InsideMask)), step(_RimLight_InsideMask, _RimLightPower_var), _RimLight_FeatherOff));
+    
+    float rimLightMask = 0.0 + ((_RimLightPower_var - _RimLight_InsideMask) * (1.0 - 0.0)) / (1.0 - _RimLight_InsideMask);
+    float _Rimlight_InsideMask_var = saturate(lerp(rimLightMask, step(_RimLight_InsideMask, _RimLightPower_var), _RimLight_FeatherOff));
     float _VertHalfLambert_var = 0.5 * dot(i.normalDir, lightDirection) + 0.5;
-    float3 _LightDirection_MaskOn_var = lerp((_Is_LightColor_RimLight_var * _Rimlight_InsideMask_var), (_Is_LightColor_RimLight_var * saturate((_Rimlight_InsideMask_var - ((1.0 - _VertHalfLambert_var) + _Tweak_LightDirection_MaskLevel)))), _LightDirection_MaskOn);
+    float lightDirectionMaskLevel = saturate(_Rimlight_InsideMask_var - ((1.0 - _VertHalfLambert_var) + _Tweak_LightDirection_MaskLevel));
+    float3 _LightDirection_MaskOn_var = lerp(_Is_LightColor_RimLight_var * _Rimlight_InsideMask_var, _Is_LightColor_RimLight_var * lightDirectionMaskLevel, _LightDirection_MaskOn);
     float _ApRimLightPower_var = pow(_RimArea_var,exp2(lerp(3,0,_Ap_RimLight_Power)));
-    float3 Set_RimLight = SATURATE_IF_SDR(_Set_RimLightMask_var.g + _Tweak_RimLightMaskLevel) * lerp(_LightDirection_MaskOn_var, (_LightDirection_MaskOn_var + (lerp(_Ap_RimLightColor.rgb, (_Ap_RimLightColor.rgb * Set_LightColor), _Is_LightColor_Ap_RimLight) * saturate((lerp((0.0 + ((_ApRimLightPower_var - _RimLight_InsideMask) * (1.0 - 0.0)) / (1.0 - _RimLight_InsideMask)), step(_RimLight_InsideMask, _ApRimLightPower_var), _Ap_RimLight_FeatherOff) - (saturate(_VertHalfLambert_var) + _Tweak_LightDirection_MaskLevel))))), _Add_Antipodean_RimLight);
+    
+    float3 apRimLightColor = lerp(_Ap_RimLightColor.rgb, (_Ap_RimLightColor.rgb * Set_LightColor), _Is_LightColor_Ap_RimLight);
+    float apRimLightMask = 0.0 + ((_ApRimLightPower_var - _RimLight_InsideMask) * (1.0 - 0.0)) / (1.0 - _RimLight_InsideMask);
+    float apRimLightFeather = lerp(apRimLightMask, step(_RimLight_InsideMask, _ApRimLightPower_var), _Ap_RimLight_FeatherOff);
+    float3 lightDirectionMask = _LightDirection_MaskOn_var + apRimLightColor * saturate(apRimLightFeather - (saturate(_VertHalfLambert_var) + _Tweak_LightDirection_MaskLevel));
+    float3 Set_RimLight = SATURATE_IF_SDR(_Set_RimLightMask_var.g + _Tweak_RimLightMaskLevel) * lerp(_LightDirection_MaskOn_var, lightDirectionMask, _Add_Antipodean_RimLight);
     //Composition: HighColor and RimLight as _RimLight_var
     float3 _RimLight_var = lerp(Set_HighColor, (Set_HighColor + Set_RimLight), _RimLight);
     //Matcap
@@ -276,10 +299,13 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     float3 _Up_Unit = float3(0, 1, 0);
     float3 _Right_Axis = cross(_Camera_Front, _Up_Unit);
     //Invert if it's "inside the mirror".
-    if(_sign_Mirror < 0){
+    if(_sign_Mirror < 0)
+    {
         _Right_Axis = -1 * _Right_Axis;
         _Rotate_MatCapUV = -1 * _Rotate_MatCapUV;
-    }else{
+    }
+    else
+    {
         _Right_Axis = _Right_Axis;
     }
     float _Camera_Right_Magnitude = sqrt(_Camera_Right.x * _Camera_Right.x + _Camera_Right.y * _Camera_Right.y + _Camera_Right.z * _Camera_Right.z);
@@ -297,17 +323,21 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     //v.2.0.5: MatCap with camera skew correction
     float3 viewNormal = (mul(UNITY_MATRIX_V, float4(lerp(i.normalDir, mul(_NormalMapForMatCap_var.rgb, tangentTransform).rgb, _Is_NormalMapForMatCap), 0))).rgb;
     float3 NormalBlend_MatcapUV_Detail = viewNormal.rgb * float3(-1, -1, 1);
-    float3 NormalBlend_MatcapUV_Base = (mul(UNITY_MATRIX_V, float4(viewDirection, 0)).rgb * float3(-1, -1, 1)) + float3(0, 0, 1);
+    float3 NormalBlend_MatcapUV_Base = mul(UNITY_MATRIX_V, float4(viewDirection, 0)).rgb * float3(-1, -1, 1) + float3(0, 0, 1);
     float3 noSknewViewNormal = NormalBlend_MatcapUV_Base * dot(NormalBlend_MatcapUV_Base, NormalBlend_MatcapUV_Detail) / NormalBlend_MatcapUV_Base.b - NormalBlend_MatcapUV_Detail;;
-    float2 _ViewNormalAsMatCapUV = (lerp(noSknewViewNormal, viewNormal, _Is_Ortho).rg * 0.5) + 0.5;
+    float2 _ViewNormalAsMatCapUV = lerp(noSknewViewNormal, viewNormal, _Is_Ortho).rg * 0.5 + 0.5;
     //
     //v.2.0.7
-    float2 _Rot_MatCapUV_var = RotateUV((0.0 + ((_ViewNormalAsMatCapUV - (0.0 + _Tweak_MatCapUV)) * (1.0 - 0.0)) / ((1.0 - _Tweak_MatCapUV) - (0.0 + _Tweak_MatCapUV))), _Rot_MatCapUV_var_ang, float2(0.5, 0.5), 1.0);
+    float tweakMatCap = 0.0 + ((_ViewNormalAsMatCapUV - (0.0 + _Tweak_MatCapUV)) * (1.0 - 0.0)) / ((1.0 - _Tweak_MatCapUV) - (0.0 + _Tweak_MatCapUV));
+    float2 _Rot_MatCapUV_var = RotateUV(tweakMatCap, _Rot_MatCapUV_var_ang, float2(0.5, 0.5), 1.0);
     //If it is "inside the mirror", flip the UV left and right.
 
-    if(_sign_Mirror < 0){
+    if(_sign_Mirror < 0)
+    {
         _Rot_MatCapUV_var.x = 1-_Rot_MatCapUV_var.x;
-    }else{
+    }
+    else
+    {
         _Rot_MatCapUV_var = _Rot_MatCapUV_var;
     }
 
@@ -319,15 +349,17 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     float _Tweak_MatcapMaskLevel_var = saturate(lerp(_Set_MatcapMask_var.g, (1.0 - _Set_MatcapMask_var.g), _Inverse_MatcapMask) + _Tweak_MatcapMaskLevel);
     float3 _Is_LightColor_MatCap_var = lerp((_MatCap_Sampler_var.rgb * _MatCapColor.rgb), ((_MatCap_Sampler_var.rgb * _MatCapColor.rgb) * Set_LightColor), _Is_LightColor_MatCap);
     //v.2.0.6 : ShadowMask on Matcap in Blend mode : multiply
-    float3 Set_MatCap = lerp(_Is_LightColor_MatCap_var, (_Is_LightColor_MatCap_var * ((1.0 - Set_FinalShadowMask) + (Set_FinalShadowMask * _TweakMatCapOnShadow)) + lerp(Set_HighColor * Set_FinalShadowMask * (1.0 - _TweakMatCapOnShadow), float3(0.0, 0.0, 0.0), _Is_BlendAddToMatCap)), _Is_UseTweakMatCapOnShadow);
+    float3 blendToMatCap = lerp(Set_HighColor * Set_FinalShadowMask * (1.0 - _TweakMatCapOnShadow), float3(0.0, 0.0, 0.0), _Is_BlendAddToMatCap);
+    float3 Set_MatCap = lerp(_Is_LightColor_MatCap_var, _Is_LightColor_MatCap_var * ((1.0 - Set_FinalShadowMask) + (Set_FinalShadowMask * _TweakMatCapOnShadow)) + blendToMatCap, _Is_UseTweakMatCapOnShadow);
 
     //
     //v.2.0.6
     //Composition: RimLight and MatCap as finalColor
     //Broke down finalColor composition
     float3 matCapColorOnAddMode = _RimLight_var + Set_MatCap * _Tweak_MatcapMaskLevel_var;
-    float _Tweak_MatcapMaskLevel_var_MultiplyMode = _Tweak_MatcapMaskLevel_var * lerp(1, (1 - (Set_FinalShadowMask) * (1 - _TweakMatCapOnShadow)), _Is_UseTweakMatCapOnShadow);
-    float3 matCapColorOnMultiplyMode = Set_HighColor * (1 - _Tweak_MatcapMaskLevel_var_MultiplyMode) + Set_HighColor * Set_MatCap * _Tweak_MatcapMaskLevel_var_MultiplyMode + lerp(float3(0, 0, 0), Set_RimLight, _RimLight);
+    float _Tweak_MatcapMaskLevel_var_MultiplyMode = _Tweak_MatcapMaskLevel_var * lerp(1, 1 - Set_FinalShadowMask * (1 - _TweakMatCapOnShadow), _Is_UseTweakMatCapOnShadow);
+    float3 rimLight = lerp(float3(0, 0, 0), Set_RimLight, _RimLight);
+    float3 matCapColorOnMultiplyMode = Set_HighColor * (1 - _Tweak_MatcapMaskLevel_var_MultiplyMode) + Set_HighColor * Set_MatCap * _Tweak_MatcapMaskLevel_var_MultiplyMode + rimLight;
     float3 matCapColorFinal = lerp(matCapColorOnMultiplyMode, matCapColorOnAddMode, _Is_BlendAddToMatCap);
 
 //v.2.0.4
@@ -341,12 +373,12 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     float2 AR_VN_Rotate = RotateUV(AR_VN, -(_Camera_Dir * _Camera_Roll), float2(0.5, 0.5), 1.0);
     float2 _AR_OffsetV_var = float2(AR_VN_Rotate.x, lerp(i.uv1.y, AR_VN_Rotate.y, _AR_OffsetV));
     float4 _AngelRing_Sampler_var = tex2D(_AngelRing_Sampler, TRANSFORM_TEX(_AR_OffsetV_var, _AngelRing_Sampler));
-    float3 _Is_LightColor_AR_var = lerp((_AngelRing_Sampler_var.rgb * _AngelRing_Color.rgb), ((_AngelRing_Sampler_var.rgb * _AngelRing_Color.rgb) * Set_LightColor), _Is_LightColor_AR);
+    float3 _Is_LightColor_AR_var = lerp(_AngelRing_Sampler_var.rgb * _AngelRing_Color.rgb, (_AngelRing_Sampler_var.rgb * _AngelRing_Color.rgb) * Set_LightColor, _Is_LightColor_AR);
     float3 Set_AngelRing = _Is_LightColor_AR_var;
     float Set_ARtexAlpha = _AngelRing_Sampler_var.a;
     float3 Set_AngelRingWithAlpha = _Is_LightColor_AR_var * _AngelRing_Sampler_var.a;
     //Composition: MatCap and AngelRing as finalColor
-    finalColor = lerp(finalColor, lerp(finalColor + Set_AngelRing, (finalColor * (1.0 - Set_ARtexAlpha)) + Set_AngelRingWithAlpha, _ARSampler_AlphaOn), _AngelRing); // Final Composition before Emissive
+    finalColor = lerp(finalColor, lerp(finalColor + Set_AngelRing, finalColor * (1.0 - Set_ARtexAlpha) + Set_AngelRingWithAlpha, _ARSampler_AlphaOn), _AngelRing); // Final Composition before Emissive
 #endif
 
 //v.2.0.7
@@ -390,7 +422,8 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     //
     //v.2.0.6: GI_Intensity with Intensity Multiplier Filter
     float3 envLightColor = envColor.rgb;
-    float envLightIntensity = 0.299 * envLightColor.r + 0.587 * envLightColor.g + 0.114 * envLightColor.b < 1 ? (0.299 * envLightColor.r + 0.587 * envLightColor.g + 0.114 * envLightColor.b) : 1;
+    float envColorSum = 0.299 * envLightColor.r + 0.587 * envLightColor.g + 0.114 * envLightColor.b;
+    float envLightIntensity = envColorSum < 1 ? envColorSum : 1;
     float3 pointLightColor = 0;
 
 #ifdef _ADDITIONAL_LIGHTS
@@ -489,19 +522,21 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
             //v.2.0.6: Add HighColor if _Is_Filter_HiCutPointLightColor is False
 
             float4 _Set_HighColorMask_var = tex2D(_Set_HighColorMask, TRANSFORM_TEX(Set_UV0, _Set_HighColorMask));
-            float _Specular_var = 0.5 * dot(halfDirection, lerp(i.normalDir, normalDirection, _Is_NormalMapToHighColor)) + 0.5; //  Specular                
-            float _TweakHighColorMask_var = (saturate((_Set_HighColorMask_var.g + _Tweak_HighColorMaskLevel)) * lerp((1.0 - step(_Specular_var, (1.0 - pow(abs(_HighColor_Power), 5)))), pow(abs(_Specular_var), exp2(lerp(11, 1, _HighColor_Power))), _Is_SpecularToHighColor));
+            float _Specular_var = 0.5 * dot(halfDirection, lerp(i.normalDir, normalDirection, _Is_NormalMapToHighColor)) + 0.5; //  Specular   
+            float highColorPow = lerp(11, 1, _HighColor_Power);
+            float specularToHighColor = lerp(1.0 - step(_Specular_var, 1.0 - pow(abs(_HighColor_Power), 5)), pow(abs(_Specular_var), exp2(highColorPow)), _Is_SpecularToHighColor);
+            float _TweakHighColorMask_var = saturate(_Set_HighColorMask_var.g + _Tweak_HighColorMaskLevel) * specularToHighColor;
 
-            float4 _HighColor_Tex_var = tex2D(_HighColor_Tex, TRANSFORM_TEX(Set_UV0, _HighColor_Tex));
+            float3 highColor = tex2D(_HighColor_Tex, TRANSFORM_TEX(Set_UV0, _HighColor_Tex)).rgb * _HighColor.rgb;
+            float3 _HighColor_var = lerp(highColor, highColor * Set_LightColor, _Is_LightColor_HighColor) * _TweakHighColorMask_var;
 
-            float3 _HighColor_var = (lerp((_HighColor_Tex_var.rgb * _HighColor.rgb), ((_HighColor_Tex_var.rgb * _HighColor.rgb) * Set_LightColor), _Is_LightColor_HighColor) * _TweakHighColorMask_var);
-
-            finalColor = finalColor + lerp(lerp(_HighColor_var, (_HighColor_var * ((1.0 - Set_FinalShadowMask) + (Set_FinalShadowMask * _TweakHighColorOnShadow))), _Is_UseTweakHighColorOnShadow), float3(0, 0, 0), _Is_Filter_HiCutPointLightColor);
+            float3 tweakHighColor = lerp(_HighColor_var, _HighColor_var * ((1.0 - Set_FinalShadowMask) + (Set_FinalShadowMask * _TweakHighColorOnShadow)), _Is_UseTweakHighColorOnShadow);
+            finalColor = finalColor + lerp(tweakHighColor, float3(0, 0, 0), _Is_Filter_HiCutPointLightColor);
             //
 
             finalColor = SATURATE_IF_SDR(finalColor);
 
-            pointLightColor +=  finalColor;
+            pointLightColor += finalColor;
             //	pointLightColor += lightColor;
         }
     }
@@ -510,7 +545,7 @@ float4 fragShadingGradeMap(VertexOutput i, fixed facing : VFACE) : SV_TARGET
     
     //
     //Final Composition
-    finalColor = SATURATE_IF_SDR(finalColor) + (envLightColor * envLightIntensity * _GI_Intensity * smoothstep(1, 0, envLightIntensity / 2)) + emissive;
+    finalColor = SATURATE_IF_SDR(finalColor) + envLightColor * envLightIntensity * _GI_Intensity * smoothstep(1, 0, envLightIntensity / 2) + emissive;
     finalColor += pointLightColor;
     
 #endif
